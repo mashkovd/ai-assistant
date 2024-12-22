@@ -1,9 +1,11 @@
 from __future__ import annotations as _annotations
 
 import os
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Literal, TypeVar
 
+from jose import jwt
 import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -27,6 +29,10 @@ from models import User, Portfolio, Orders, get_db
 THIS_DIR = Path(__file__).parent
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
 agent = Agent("openai:gpt-4o")
+
+SECRET_KEY = "your-secret-key"
+ALGORITHM = "HS256"
+
 app = FastAPI()
 
 app.add_middleware(
@@ -111,17 +117,17 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         db.add(new_user)
         db.commit()
 
-    response = RedirectResponse(f"{FRONTEND_BASE_URL}/chat")
-    response.set_cookie(
-        key="user_email",
-        value=user["email"],
-        domain="mctl.me",
-        secure=True,
-        samesite="none",
-        httponly=True,  # Optional: Recommended for cookies storing sensitive information
-        max_age=60 * 60 * 24 * 7,  # 1 week
+    # Generate JWT
+    token_expiry = datetime.now() + timedelta(days=7)
+    jwt_token = jwt.encode({"sub": user["email"], "exp": token_expiry}, SECRET_KEY, algorithm=ALGORITHM)
+
+    # Return token and redirect URL
+    return JSONResponse(
+        content={
+            "token": jwt_token,
+            "redirect_url": f"https://mctl.me/chat",
+        }
     )
-    return response
 
 
 class ChatMessage(TypedDict):
