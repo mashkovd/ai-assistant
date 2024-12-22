@@ -1,77 +1,38 @@
-from __future__ import annotations as _annotations
-
-import asyncio
-import os
-import sqlite3
-from collections.abc import AsyncIterator
-from concurrent.futures.thread import ThreadPoolExecutor
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from functools import partial
-from pathlib import Path
-from typing import Annotated, Any, Callable, Literal, TypeVar
-
-import httpx
-import logfire
-from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import Field, TypeAdapter, BaseModel
-from pydantic_ai import Agent
-from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelMessagesTypeAdapter,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    UserPromptPart,
-)
 from sqlalchemy.orm import Session
-from typing_extensions import LiteralString, ParamSpec, TypedDict
-
+import httpx
+import os
+from dotenv import load_dotenv
 from models import User, Portfolio, Orders, get_db
+from pydantic import BaseModel
 
-THIS_DIR = Path(__file__).parent
-FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
-agent = Agent("openai:gpt-4o")
 app = FastAPI()
 
+# Load environment variables
+load_dotenv()
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
+
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://192.168.1.6:5173",
-        "https://mctl.me",
-    ],  # Replace with your frontend URL
+    allow_origins=["http://localhost:5173", "https://mctl.me"],  # Update as needed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-MessageTypeAdapter: TypeAdapter[ModelMessage] = TypeAdapter(
-    Annotated[ModelMessage, Field(discriminator="kind")]
-)
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-load_dotenv()
-
-# Google OAuth2 setup
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("REDIRECT_URI")
-
-
 @app.get("/")
 async def root(request: Request, db: Session = Depends(get_db)):
     user_email = request.cookies.get("user_email")
     if not user_email or not db.query(User).filter(User.email == user_email).first():
-        return RedirectResponse("/login")
-    return RedirectResponse("/chat_app")
+        return RedirectResponse(f"{FRONTEND_BASE_URL}/login")
+    return RedirectResponse(f"{FRONTEND_BASE_URL}/chat")
 
 
 @app.get("/auth/google")
@@ -92,6 +53,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     if not code:
         raise HTTPException(status_code=400, detail="Code not found")
 
+    # Exchange code for tokens
     token_url = "https://oauth2.googleapis.com/token"
     data = {
         "code": code,
@@ -106,6 +68,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         token_response.raise_for_status()
         tokens = token_response.json()
 
+    # Fetch user info
     async with httpx.AsyncClient() as client:
         user_info = await client.get(
             "https://www.googleapis.com/oauth2/v1/userinfo",
@@ -114,89 +77,72 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         user_info.raise_for_status()
         user = user_info.json()
 
+    # Check or create user in the database
     existing_user = db.query(User).filter(User.email == user["email"]).first()
     if not existing_user:
         new_user = User(email=user["email"], name=user.get("name", "Unknown"))
         db.add(new_user)
         db.commit()
 
+    # Respond with JSON data
     return JSONResponse(
         content={
             "user_email": user["email"],
-            "redirect_url": f"{FRONTEND_BASE_URL}/chat"
+            "redirect_url": f"{FRONTEND_BASE_URL}/chat",
         }
     )
 
 
-
-class ChatMessage(TypedDict):
-    """Format of messages sent to the browser."""
-
-    role: Literal["user", "model"]
-    timestamp: str
-    content: str
-
-
-def to_chat_message(m: ModelMessage) -> ChatMessage:
-    first_part = m.parts[0]
-    if isinstance(m, ModelRequest):
-        if isinstance(first_part, UserPromptPart):
-            return {
-                "role": "user",
-                "timestamp": first_part.timestamp.isoformat(),
-                "content": first_part.content,
-            }
-    elif isinstance(m, ModelResponse):
-        if isinstance(first_part, TextPart):
-            return {
-                "role": "model",
-                "timestamp": m.timestamp.isoformat(),
-                "content": first_part.content,
-            }
-    raise UnexpectedModelBehavior(f"Unexpected message type for chat app: {m}")
-
-
-class PromptRequest(BaseModel):
-    prompt: str
-
-
 @app.post("/chat")
-async def chat_prompt(request: PromptRequest):
-    result = await agent.run(f'"{request.prompt}"')
+async def chat_prompt(request: Request):
+    data = await request.json()
+    prompt = data.get("prompt")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required")
 
-    return {"response": f"Agent answer: {result.data}"}
+    # Simulated AI response
+    response = f"AI Response to: {prompt}"
+    return {"response": response}
 
 
 @app.post("/order")
-async def order(request: Request, db: Session = Depends(get_db)):
+async def place_order(request: Request, db: Session = Depends(get_db)):
     data = await request.json()
     user_email = request.cookies.get("user_email")
+
     user = db.query(User).filter(User.email == user_email).first()
-    if user:
-        new_order = Orders(
-            symbol=data["symbol"], quantity=data["quantity"], user_id=user.id
-        )
-        db.add(new_order)
+    if not user:
+        return {"status": "error", "message": "User not found"}
 
-        portfolio = (
-            db.query(Portfolio)
-            .filter(Portfolio.user_id == user.id, Portfolio.symbol == data["symbol"])
-            .first()
-        )
-        if not portfolio:
-            portfolio = Portfolio(symbol=data["symbol"], quantity=0, user_id=user.id)
-            db.add(portfolio)
-        portfolio.quantity += data["quantity"]
-        db.commit()
+    symbol = data.get("symbol")
+    quantity = data.get("quantity", 0)
 
-        return {"status": "ok"}
-    return {"status": "error", "message": "User not found"}
+    if not symbol or quantity <= 0:
+        raise HTTPException(status_code=400, detail="Invalid order data")
+
+    # Create new order
+    new_order = Orders(symbol=symbol, quantity=quantity, user_id=user.id)
+    db.add(new_order)
+
+    # Update portfolio
+    portfolio = (
+        db.query(Portfolio)
+        .filter(Portfolio.user_id == user.id, Portfolio.symbol == symbol)
+        .first()
+    )
+    if not portfolio:
+        portfolio = Portfolio(symbol=symbol, quantity=0, user_id=user.id)
+        db.add(portfolio)
+    portfolio.quantity += quantity
+    db.commit()
+
+    return {"status": "ok"}
 
 
 @app.get("/auth/status")
 async def auth_status(request: Request):
-    user = request.cookies.get("user_email")  # Or use session data
-    return {"authenticated": user is not None}
+    user_email = request.cookies.get("user_email")
+    return {"authenticated": user_email is not None}
 
 
 if __name__ == "__main__":
