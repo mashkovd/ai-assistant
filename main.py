@@ -34,7 +34,7 @@ from typing_extensions import LiteralString, ParamSpec, TypedDict
 from models import User, Portfolio, Orders, get_db
 
 THIS_DIR = Path(__file__).parent
-FRONTEND_BASE_URL = "http://localhost:5173"
+FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
 agent = Agent("openai:gpt-4o")
 app = FastAPI()
 
