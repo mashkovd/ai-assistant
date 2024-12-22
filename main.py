@@ -121,13 +121,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     token_expiry = datetime.now() + timedelta(days=7)
     jwt_token = jwt.encode({"sub": user["email"], "exp": token_expiry}, SECRET_KEY, algorithm=ALGORITHM)
 
+    redirect_url = f"https://mctl.me/chat?token={jwt_token}"
     # Return token and redirect URL
-    return JSONResponse(
-        content={
-            "token": jwt_token,
-            "redirect_url": f"https://mctl.me/chat",
-        }
-    )
+    return RedirectResponse(url=redirect_url)
 
 
 class ChatMessage(TypedDict):
