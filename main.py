@@ -112,7 +112,14 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         db.commit()
 
     response = RedirectResponse(f"{FRONTEND_BASE_URL}/chat")
-    response.set_cookie("user_email", user["email"])
+    response.set_cookie(
+        key="user_email",
+        value=user["email"],
+        domain="mctl.me",
+        secure=True,
+        samesite="none",
+        httponly=True,  # Optional: Recommended for cookies storing sensitive information
+    )
     return response
 
 
