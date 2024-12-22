@@ -202,7 +202,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         value=user["email"],
         domain="mctl.me",
         secure=True,
-        samesite="none",
+        samesite="None",
         httponly=True,  # Optional: Recommended for cookies storing sensitive information
     )
     return response
