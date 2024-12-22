@@ -112,14 +112,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         db.commit()
 
     response = RedirectResponse(f"{FRONTEND_BASE_URL}/chat")
-    response.set_cookie(
-        key="user_email",
-        value=user["email"],
-        domain="mctl.me",
-        secure=True,
-        samesite="none",
-        httponly=True,  # Optional: Recommended for cookies storing sensitive information
-    )
+    response.set_cookie("user_email", user["email"])
     return response
 
 
@@ -167,9 +160,7 @@ async def order(request: Request, db: Session = Depends(get_db)):
     user_email = request.cookies.get("user_email")
     user = db.query(User).filter(User.email == user_email).first()
     if user:
-        new_order = Orders(
-            symbol=data["symbol"], quantity=data["quantity"], user_id=user.id
-        )
+        new_order = Orders(symbol=data["symbol"], quantity=data["quantity"], user_id=user.id)
         db.add(new_order)
 
         portfolio = (
@@ -196,4 +187,4 @@ async def auth_status(request: Request):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
