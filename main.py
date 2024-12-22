@@ -119,6 +119,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         secure=True,
         samesite="none",
         httponly=True,  # Optional: Recommended for cookies storing sensitive information
+        max_age=60 * 60 * 24 * 7,  # 1 week
     )
     return response
 
