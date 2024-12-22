@@ -58,82 +58,6 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-@dataclass
-class Database:
-    """Rudimentary database to store chat messages in SQLite.
-
-    The SQLite standard library package is synchronous, so we
-    use a thread pool executor to run queries asynchronously.
-    """
-
-    con: sqlite3.Connection
-    _loop: asyncio.AbstractEventLoop
-    _executor: ThreadPoolExecutor
-
-    @classmethod
-    @asynccontextmanager
-    async def connect(
-        cls, file: Path = THIS_DIR / ".chat_app_messages.sqlite"
-    ) -> AsyncIterator[Database]:
-        with logfire.span("connect to DB"):
-            loop = asyncio.get_event_loop()
-            executor = ThreadPoolExecutor(max_workers=1)
-            con = await loop.run_in_executor(executor, cls._connect, file)
-            slf = cls(con, loop, executor)
-        try:
-            yield slf
-        finally:
-            await slf._asyncify(con.close)
-
-    @staticmethod
-    def _connect(file: Path) -> sqlite3.Connection:
-        con = sqlite3.connect(str(file))
-        con = logfire.instrument_sqlite3(con)
-        cur = con.cursor()
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS messages (id INT PRIMARY KEY, message_list TEXT);"
-        )
-        con.commit()
-        return con
-
-    async def add_messages(self, messages: bytes):
-        await self._asyncify(
-            self._execute,
-            "INSERT INTO messages (message_list) VALUES (?);",
-            messages,
-            commit=True,
-        )
-        await self._asyncify(self.con.commit)
-
-    async def get_messages(self) -> list[ModelMessage]:
-        c = await self._asyncify(
-            self._execute, "SELECT message_list FROM messages order by id desc"
-        )
-        rows = await self._asyncify(c.fetchall)
-        messages: list[ModelMessage] = []
-        for row in rows:
-            messages.extend(ModelMessagesTypeAdapter.validate_json(row[0]))
-        return messages
-
-    def _execute(
-        self, sql: LiteralString, *args: Any, commit: bool = False
-    ) -> sqlite3.Cursor:
-        cur = self.con.cursor()
-        cur.execute(sql, args)
-        if commit:
-            self.con.commit()
-        return cur
-
-    async def _asyncify(
-        self, func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
-    ) -> R:
-        return await self._loop.run_in_executor(  # type: ignore
-            self._executor,
-            partial(func, **kwargs),
-            *args,  # type: ignore
-        )
-
-
 load_dotenv()
 
 # Google OAuth2 setup
@@ -252,7 +176,9 @@ async def order(request: Request, db: Session = Depends(get_db)):
     user_email = request.cookies.get("user_email")
     user = db.query(User).filter(User.email == user_email).first()
     if user:
-        new_order = Orders(symbol=data["symbol"], quantity=data["quantity"], user_id=user.id)
+        new_order = Orders(
+            symbol=data["symbol"], quantity=data["quantity"], user_id=user.id
+        )
         db.add(new_order)
 
         portfolio = (
@@ -273,7 +199,7 @@ async def order(request: Request, db: Session = Depends(get_db)):
 @app.get("/auth/status")
 async def auth_status(request: Request):
     user = request.cookies.get("user_email")  # Or use session data
-    return JSONResponse({"authenticated": user is not None})
+    return {"authenticated": user is not None}
 
 
 if __name__ == "__main__":
