@@ -200,7 +200,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     response.set_cookie(
         key="user_email",
         value=user["email"],
-        domain="https://mctl.me",
+        domain="mctl.me",
         secure=True,
         samesite="none",
         httponly=True,  # Optional: Recommended for cookies storing sensitive information
