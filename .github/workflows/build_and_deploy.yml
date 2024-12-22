@@ -45,7 +45,7 @@ jobs:
 
       - name: Update Helm chart values
         run: |
-          cd helm-exchange-bot
+          cd helm-ai-assistant
           echo "APP_VERSION=${{ env.APP_VERSION }}"
           sed -i 's/^appVersion:.*/appVersion: "${{ env.APP_VERSION }}"/' Chart.yaml
 
