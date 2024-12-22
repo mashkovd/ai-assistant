@@ -43,7 +43,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://192.168.1.6:5173",
-        "https://ai-assistant.mctl.ru",
+        "https://mctl.me",
     ],  # Replace with your frontend URL
     allow_credentials=True,
     allow_methods=["*"],
