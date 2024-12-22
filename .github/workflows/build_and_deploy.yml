@@ -37,22 +37,22 @@ jobs:
           push: true
           tags: ${{ vars.DOCKERHUB_USERNAME }}/${{ vars.APP_NAME }}:${{ env.APP_VERSION }}
 
-#      - name: Checkout Helm chart repository
-#        uses: actions/checkout@v4
-#        with:
-#          repository: mashkovd/argocdApps
-#          token: ${{ secrets.HELM_REPO_TOKEN }}
-#
-#      - name: Update Helm chart values
-#        run: |
-#          cd helm-exchange-bot
-#          echo "APP_VERSION=${{ env.APP_VERSION }}"
-#          sed -i 's/^appVersion:.*/appVersion: "${{ env.APP_VERSION }}"/' Chart.yaml
-#
-#      - name: Commit and push Helm chart changes
-#        run: |
-#          git config --global user.email "mashkovd@live.ru"
-#          git config --global user.name "Dmitrii.Mashkov"
-#          git add .
-#          git commit -m "Update Helm chart values. Version: ${{ env.APP_VERSION }}"
-#          git push
+      - name: Checkout Helm chart repository
+        uses: actions/checkout@v4
+        with:
+          repository: mashkovd/argocdApps
+          token: ${{ secrets.HELM_REPO_TOKEN }}
+
+      - name: Update Helm chart values
+        run: |
+          cd helm-exchange-bot
+          echo "APP_VERSION=${{ env.APP_VERSION }}"
+          sed -i 's/^appVersion:.*/appVersion: "${{ env.APP_VERSION }}"/' Chart.yaml
+
+      - name: Commit and push Helm chart changes
+        run: |
+          git config --global user.email "mashkovd@live.ru"
+          git config --global user.name "Dmitrii.Mashkov"
+          git add .
+          git commit -m "Update Helm chart values. Version: ${{ env.APP_VERSION }}"
+          git push
