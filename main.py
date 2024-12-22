@@ -197,7 +197,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         db.commit()
 
     response = RedirectResponse(f"{FRONTEND_BASE_URL}/chat")
-    response.set_cookie("user_email", user["email"])
+    response.set_cookie("user_email", user["email"], samesite="none", secure=True)
     return response
 
 
@@ -266,7 +266,7 @@ async def order(request: Request, db: Session = Depends(get_db)):
 @app.get("/auth/status")
 async def auth_status(request: Request):
     user = request.cookies.get("user_email")  # Or use session data
-    return {"authenticated": user is not None}
+    return JSONResponse({"authenticated": user is not None})
 
 
 if __name__ == "__main__":
