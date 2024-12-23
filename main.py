@@ -137,7 +137,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         {"sub": user["email"], "exp": token_expiry}, SECRET_KEY, algorithm=ALGORITHM
     )
 
-    redirect_url = f"{FRONTEND_BASE_URL}/chat?token={jwt_token}"
+    redirect_url = f"{FRONTEND_BASE_URL}/auth/callback?token={jwt_token}"
     # Return token and redirect URL
     return RedirectResponse(url=redirect_url)
 
