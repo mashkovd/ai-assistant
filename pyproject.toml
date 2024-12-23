@@ -1,6 +1,6 @@
 [project]
 name = "ai-trade-assist"
-version = "0.23.0"
+version = "0.24.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,4 +19,5 @@ dependencies = [
     "isort>=5.13.2",
     "ruff>=0.8.4",
     "python-jose>=3.3.0",
+    "psycopg2-binary>=2.9.10",
 ]

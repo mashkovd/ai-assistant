@@ -1,12 +1,13 @@
 from __future__ import annotations as _annotations
 
+import os
 from sqlalchemy import Column, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Database setup
-DATABASE_URL = "sqlite:///./test.db"
-FRONTEND_BASE_URL = "http://localhost:5173"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
