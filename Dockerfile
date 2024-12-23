@@ -20,4 +20,4 @@ ADD . /app
 EXPOSE 8000
 
 # Run app.py when the container launches
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:8000", "-w", "4"]
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "8"]
