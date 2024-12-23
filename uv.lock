@@ -3,7 +3,7 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "ai-trade-assist"
-version = "0.25.0"
+version = "0.26.0"
 source = { virtual = "." }
 dependencies = [
     { name = "black" },

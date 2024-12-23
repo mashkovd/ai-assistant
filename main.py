@@ -5,9 +5,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal, Optional, TypeVar
+from typing import Annotated, Any, Optional, TypeVar
 
 import httpx
+import logfire
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,13 +16,15 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from jose import jwt
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import (ModelMessage, ModelRequest, ModelResponse,
-                                  TextPart, UserPromptPart)
+from pydantic_ai.messages import (
+    ModelMessage,
+)
 from sqlalchemy.orm import Session
-from typing_extensions import ParamSpec, TypedDict
+from typing_extensions import ParamSpec
 
 from models import Orders, Portfolio, User, get_db
+
+logfire.configure(send_to_logfire="if-token-present")
 
 THIS_DIR = Path(__file__).parent
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
@@ -58,9 +61,10 @@ class Dependencies:
 @agent.tool
 async def get_tickers(ctx: RunContext[Dependencies]) -> list[dict[str, Any]]:
     """Get the list of tickers."""
-    response = await ctx.deps.http_client.get(
-        "https://app.libertex.com/spa/instruments",
-    )
+    with logfire.span("Get data from https://app.libertex.com/spa/instruments"):
+        response = await ctx.deps.http_client.get(
+            "https://app.libertex.com/spa/instruments",
+        )
     response.raise_for_status()
     data = response.json()
     result = [
@@ -137,25 +141,25 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         "redirect_uri": REDIRECT_URI,
         "grant_type": "authorization_code",
     }
-
-    async with httpx.AsyncClient() as client:
-        token_response = await client.post(token_url, data=data)
-        token_response.raise_for_status()
-        tokens = token_response.json()
-
-    async with httpx.AsyncClient() as client:
-        user_info = await client.get(
-            "https://www.googleapis.com/oauth2/v1/userinfo",
-            headers={"Authorization": f"Bearer {tokens['access_token']}"},
-        )
-        user_info.raise_for_status()
-        user = user_info.json()
+    with logfire.span("auth via google"):
+        async with httpx.AsyncClient() as client:
+            token_response = await client.post(token_url, data=data)
+            token_response.raise_for_status()
+            tokens = token_response.json()
+        async with httpx.AsyncClient() as client:
+            user_info = await client.get(
+                "https://www.googleapis.com/oauth2/v1/userinfo",
+                headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            )
+            user_info.raise_for_status()
+            user = user_info.json()
 
     existing_user = db.query(User).filter(User.email == user["email"]).first()
     if not existing_user:
         new_user = User(email=user["email"], name=user.get("name", "Unknown"))
         db.add(new_user)
         db.commit()
+        logfire.info("User created", user=new_user)
 
     # Generate JWT
     token_expiry = datetime.now() + timedelta(days=7)
@@ -166,33 +170,6 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     redirect_url = f"{FRONTEND_BASE_URL}/auth/callback?token={jwt_token}"
     # Return token and redirect URL
     return RedirectResponse(url=redirect_url)
-
-
-class ChatMessage(TypedDict):
-    """Format of messages sent to the browser."""
-
-    role: Literal["user", "model"]
-    timestamp: str
-    content: str
-
-
-def to_chat_message(m: ModelMessage) -> ChatMessage:
-    first_part = m.parts[0]
-    if isinstance(m, ModelRequest):
-        if isinstance(first_part, UserPromptPart):
-            return {
-                "role": "user",
-                "timestamp": first_part.timestamp.isoformat(),
-                "content": first_part.content,
-            }
-    elif isinstance(m, ModelResponse):
-        if isinstance(first_part, TextPart):
-            return {
-                "role": "model",
-                "timestamp": m.timestamp.isoformat(),
-                "content": first_part.content,
-            }
-    raise UnexpectedModelBehavior(f"Unexpected message type for chat app: {m}")
 
 
 class PromptRequest(BaseModel):
@@ -207,6 +184,7 @@ async def chat_prompt(request: Request):
         return {"authenticated": False}
 
     token = auth_header.split(" ")[1]
+    user_email = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub")
     data = await request.json()
 
     async with httpx.AsyncClient() as client:
@@ -220,19 +198,21 @@ async def chat_prompt(request: Request):
         "rate": result.data.rate,
         "alias": result.data.alias,
     }
+    with logfire.span(
+        f"create order for {user_email} with symbol {result.data.ticker}"
+    ):
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{BACKEND_BASE_URL}/order",
+                json=order_data,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            response.raise_for_status()
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{BACKEND_BASE_URL}/order",
-            json=order_data,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        response.raise_for_status()
-
-    return {
-        "response": f"Agent answer: {result.data.amount} {result.data.ticker} {result.data.action} "
-        f"{result.data.rate} {result.data.alias}",
-    }
+        return {
+            "response": f"Agent answer: {result.data.amount} {result.data.ticker} {result.data.action} "
+            f"{result.data.rate} {result.data.alias}",
+        }
 
 
 @app.post("/order")
@@ -309,6 +289,27 @@ async def get_portfolio(request: Request, db: Session = Depends(get_db)):
         return {"portfolio": portfolio}
     except jwt.JWTError:
         return {"authenticated": False}
+
+
+@app.post("/orders")
+async def get_orders(request: Request, db: Session = Depends(get_db)):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    token = auth_header.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_email = payload.get("sub")
+
+        user = db.query(User).filter(User.email == user_email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        orders = db.query(Orders).filter(Orders.user_id == user.id).all()
+        return {"orders": orders}
+    except jwt.JWTError:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @app.get("/auth/status")
