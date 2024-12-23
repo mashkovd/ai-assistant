@@ -2,8 +2,7 @@ from __future__ import annotations as _annotations
 
 import os
 
-from sqlalchemy import (Column, Float, ForeignKey, Integer, String,
-                        create_engine)
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Database setup

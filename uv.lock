@@ -3,12 +3,13 @@ requires-python = ">=3.10"
 
 [[package]]
 name = "ai-trade-assist"
-version = "0.26.0"
+version = "0.27.0"
 source = { virtual = "." }
 dependencies = [
     { name = "black" },
     { name = "fastapi" },
     { name = "fastapi-login" },
+    { name = "gunicorn" },
     { name = "httpx" },
     { name = "isort" },
     { name = "logfire", extra = ["fastapi", "sqlite3"] },
@@ -28,6 +29,7 @@ requires-dist = [
     { name = "black", specifier = ">=24.10.0" },
     { name = "fastapi", specifier = ">=0.115.6" },
     { name = "fastapi-login", specifier = ">=1.10.3" },
+    { name = "gunicorn", specifier = ">=23.0.0" },
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "isort", specifier = ">=5.13.2" },
     { name = "logfire", extras = ["fastapi", "sqlite3"], specifier = ">=2.9.0" },
@@ -430,6 +432,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/90/75/3b3e6b9495ca8e2e7f08373412f2f3c5fd0d8cbe987905d7caebc84abba2/groq-0.13.1.tar.gz", hash = "sha256:588fd5bee984f4eb46ec89552778d5698b9e9614435defef868645c19463cbcc", size = 109709 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f0/ad/2bf9b91085b1d67e432bc3071378570e7fd0326c5c648376e6230d3fed99/groq-0.13.1-py3-none-any.whl", hash = "sha256:0c5d1d6df93de55de705fe73729b79baaa0c871f7575d6aa64b2962b56101b3e", size = 109114 },
+]
+
+[[package]]
+name = "gunicorn"
+version = "23.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/72/9614c465dc206155d93eff0ca20d42e1e35afc533971379482de953521a4/gunicorn-23.0.0.tar.gz", hash = "sha256:f014447a0101dc57e294f6c18ca6b40227a4c90e9bdb586042628030cba004ec", size = 375031 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/7d/6dac2a6e1eba33ee43f318edbed4ff29151a49b5d37f080aad1e6469bca4/gunicorn-23.0.0-py3-none-any.whl", hash = "sha256:ec400d38950de4dfd418cff8328b2c8faed0edb0d517d3394e457c317908ca4d", size = 85029 },
 ]
 
 [[package]]

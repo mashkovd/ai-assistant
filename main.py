@@ -12,13 +12,11 @@ import logfire
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from jose import jwt
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.messages import (
-    ModelMessage,
-)
+from pydantic_ai.messages import ModelMessage
 from sqlalchemy.orm import Session
 from typing_extensions import ParamSpec
 
@@ -52,11 +50,21 @@ agent = Agent(
     result_type=SupportRequest,
 )
 
+agent_admin = Agent(
+    "openai:gpt-4o",
+    system_prompt="You have information about Portfolio, Orders, and Users. Use data from tools"
+    "for give the answer for request.",
+    # result_type=str,
+)
 
 @dataclass
 class Dependencies:
     http_client: httpx.AsyncClient
 
+
+@dataclass
+class DBDependencies:
+    db: Session
 
 @agent.tool
 async def get_tickers(ctx: RunContext[Dependencies]) -> list[dict[str, Any]]:
@@ -71,6 +79,26 @@ async def get_tickers(ctx: RunContext[Dependencies]) -> list[dict[str, Any]]:
         {"alias": d["alias"], "symbol": d["symbol"], "rate": d["rate"]}
         for d in data["instruments"]
     ]
+    return result
+
+def to_dict(obj):
+    """Convert an SQLAlchemy object to a dictionary."""
+    return {column.name: getattr(obj, column.name) for column in obj.__table__.columns}
+
+
+@agent_admin.tool
+async def get_info(ctx: RunContext[DBDependencies]) -> dict[str, list[Any]]:
+    """Get info about Portfolio, Orders, and Users."""
+    session = ctx.deps.db
+    try:
+        orders = [to_dict(order) for order in session.query(Orders).all()]
+        portfolios = [
+            to_dict(portfolio) for portfolio in session.query(Portfolio).all()
+        ]
+        users = [to_dict(user) for user in session.query(User).all()]
+        result = {"users": users, "orders": orders, "portfolio": portfolios}
+    finally:
+        session.close()
     return result
 
 
@@ -215,6 +243,20 @@ async def chat_prompt(request: Request):
         }
 
 
+@app.post("/chat_admin")
+async def chat_admin_prompt(request: Request, db: Session = Depends(get_db)):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return {"authenticated": False}
+
+    data = await request.json()
+
+    deps = DBDependencies(db=db)
+    result = await agent_admin.run(f'"{data["prompt"]}"', deps=deps)
+    response_data = result.data if hasattr(result, "data") else str(result)
+    return Response(response_data)
+
+
 @app.post("/order")
 async def order(request: Request, db: Session = Depends(get_db)):
     auth_header = request.headers.get("Authorization")
@@ -259,7 +301,7 @@ async def order(request: Request, db: Session = Depends(get_db)):
                 portfolio.rate += data["quantity"] * data["rate"]
             else:
                 portfolio.quantity -= data["quantity"]
-                portfolio.rate += data["quantity"] * data["rate"]
+                portfolio.rate -= data["quantity"] * data["rate"]
 
             db.add(portfolio)
 
@@ -285,7 +327,11 @@ async def get_portfolio(request: Request, db: Session = Depends(get_db)):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        portfolio = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
+        portfolio = (
+            db.query(Portfolio)
+            .filter(Portfolio.user_id == user.id, Portfolio.quantity != 0)
+            .all()
+        )
         return {"portfolio": portfolio}
     except jwt.JWTError:
         return {"authenticated": False}

@@ -16,8 +16,8 @@ RUN uv sync
 # Add the current directory contents into the container at /app
 ADD . /app
 
-# Make port 5000 available to the world outside this container
-EXPOSE 5000
+# Make port 8000 available to the world outside this container
+EXPOSE 8000
 
 # Run app.py when the container launches
-CMD ["uv", "run", "-m", "main", "--host", "0.0.0.0"]
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:8000", "-w", "4"]
