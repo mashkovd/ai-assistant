@@ -22,7 +22,7 @@ from pydantic_ai.messages import (
 from sqlalchemy.orm import Session
 from typing_extensions import ParamSpec
 
-from models import Orders, Portfolio, User, get_db
+from db import Orders, Portfolio, User, get_db
 
 logfire.configure(send_to_logfire="if-token-present")
 
