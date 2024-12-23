@@ -8,13 +8,12 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
-from typing import Annotated, Any, Callable, Literal, TypeVar
+from typing import Any, Callable, TypeVar
 
 import logfire
-
 # FastAPI app
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
-from typing_extensions import LiteralString, ParamSpec, TypedDict
+from typing_extensions import LiteralString, ParamSpec
 
 P = ParamSpec("P")
 R = TypeVar("R")

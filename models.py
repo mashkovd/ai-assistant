@@ -1,6 +1,6 @@
 from __future__ import annotations as _annotations
 
-from sqlalchemy import Column, Integer, String, ForeignKey, create_engine
+from sqlalchemy import Column, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Database setup
@@ -23,15 +23,16 @@ class User(Base):
 class Orders(Base):
     __tablename__ = "orders"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer,ForeignKey("users.id"), index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
     symbol = Column(String)
     quantity = Column(Integer)
+    action = Column(String)
 
 
 class Portfolio(Base):
     __tablename__ = "portfolio"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer,ForeignKey("users.id"), index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
     symbol = Column(String)
     quantity = Column(Integer)
 

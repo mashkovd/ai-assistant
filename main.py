@@ -2,35 +2,49 @@ from __future__ import annotations as _annotations
 
 import os
 from datetime import datetime, timedelta
+from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal, TypeVar
 
-from jose import jwt
 import httpx
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import Field, TypeAdapter, BaseModel
+from jose import jwt
+from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    UserPromptPart,
-)
+from pydantic_ai.messages import (ModelMessage, ModelRequest, ModelResponse,
+                                  TextPart, UserPromptPart)
 from sqlalchemy.orm import Session
 from typing_extensions import ParamSpec, TypedDict
 
-from models import User, Portfolio, Orders, get_db
+from models import Orders, Portfolio, User, get_db
 
 THIS_DIR = Path(__file__).parent
 FRONTEND_BASE_URL = os.getenv("FRONTEND_BASE_URL")
-agent = Agent("openai:gpt-4o")
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL")
 
-SECRET_KEY = "your-secret-key"
+
+class Action(str, Enum):
+    BUY = "buy"
+    SELL = "sell"
+
+
+class SupportRequest(BaseModel):
+    ticker: str = Field(description="The ticker from request")
+    amount: int = Field(description="The amount from request")
+    action: Action
+
+
+agent = Agent(
+    "openai:gpt-4o",
+    system_prompt="As agent just extract real ticker from stocks and amount from the request",
+    result_type=SupportRequest,
+)
+
+SECRET_KEY = "abracadabra"
 ALGORITHM = "HS256"
 
 app = FastAPI()
@@ -123,7 +137,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         {"sub": user["email"], "exp": token_expiry}, SECRET_KEY, algorithm=ALGORITHM
     )
 
-    redirect_url = f"https://mctl.me/chat?token={jwt_token}"
+    redirect_url = f"{FRONTEND_BASE_URL}/chat?token={jwt_token}"
     # Return token and redirect URL
     return RedirectResponse(url=redirect_url)
 
@@ -157,13 +171,37 @@ def to_chat_message(m: ModelMessage) -> ChatMessage:
 
 class PromptRequest(BaseModel):
     prompt: str
+    token: str
 
 
 @app.post("/chat")
-async def chat_prompt(request: PromptRequest):
-    result = await agent.run(f'"{request.prompt}"')
+async def chat_prompt(request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return {"authenticated": False}
 
-    return {"response": f"Agent answer: {result.data}"}
+    token = auth_header.split(" ")[1]
+    data = await request.json()
+
+    result = await agent.run(f'"{data["prompt"]}"')
+
+    order_data = {
+        "symbol": result.data.ticker,
+        "quantity": result.data.amount,
+        "action": result.data.action,
+    }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            f"{BACKEND_BASE_URL}/order",
+            json=order_data,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response.raise_for_status()
+
+    return {
+        "response": f"Agent answer: {result.data.amount} {result.data.ticker} {result.data.action}"
+    }
 
 
 @app.post("/order")
@@ -181,7 +219,10 @@ async def order(request: Request, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.email == user_email).first()
         if user:
             new_order = Orders(
-                symbol=data["symbol"], quantity=data["quantity"], user_id=user.id
+                symbol=data["symbol"],
+                quantity=data["quantity"],
+                action=data["action"],
+                user_id=user.id,
             )
             db.add(new_order)
 
@@ -196,11 +237,37 @@ async def order(request: Request, db: Session = Depends(get_db)):
                 portfolio = Portfolio(
                     symbol=data["symbol"], quantity=0, user_id=user.id
                 )
-                db.add(portfolio)
-            portfolio.quantity += data["quantity"]
+            if data["action"] == Action.BUY:
+                portfolio.quantity += data["quantity"]
+            else:
+                portfolio.quantity -= data["quantity"]
+
+            db.add(portfolio)
+
             db.commit()
 
             return {"status": "ok"}
+    except jwt.JWTError:
+        return {"authenticated": False}
+
+
+@app.post("/portfolio")
+async def get_portfolio(request: Request, db: Session = Depends(get_db)):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        HTTPException(status_code=401, detail="Unauthorized")
+
+    token = auth_header.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_email = payload.get("sub")
+
+        user = db.query(User).filter(User.email == user_email).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        portfolio = db.query(Portfolio).filter(Portfolio.user_id == user.id).all()
+        return {"portfolio": portfolio}
     except jwt.JWTError:
         return {"authenticated": False}
 
