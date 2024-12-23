@@ -119,7 +119,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 
     # Generate JWT
     token_expiry = datetime.now() + timedelta(days=7)
-    jwt_token = jwt.encode({"sub": user["email"], "exp": token_expiry}, SECRET_KEY, algorithm=ALGORITHM)
+    jwt_token = jwt.encode(
+        {"sub": user["email"], "exp": token_expiry}, SECRET_KEY, algorithm=ALGORITHM
+    )
 
     redirect_url = f"https://mctl.me/chat?token={jwt_token}"
     # Return token and redirect URL
@@ -166,26 +168,41 @@ async def chat_prompt(request: PromptRequest):
 
 @app.post("/order")
 async def order(request: Request, db: Session = Depends(get_db)):
-    data = await request.json()
-    user_email = request.cookies.get("user_email")
-    user = db.query(User).filter(User.email == user_email).first()
-    if user:
-        new_order = Orders(symbol=data["symbol"], quantity=data["quantity"], user_id=user.id)
-        db.add(new_order)
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return {"authenticated": False}
 
-        portfolio = (
-            db.query(Portfolio)
-            .filter(Portfolio.user_id == user.id, Portfolio.symbol == data["symbol"])
-            .first()
-        )
-        if not portfolio:
-            portfolio = Portfolio(symbol=data["symbol"], quantity=0, user_id=user.id)
-            db.add(portfolio)
-        portfolio.quantity += data["quantity"]
-        db.commit()
+    token = auth_header.split(" ")[1]
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_email = payload.get("sub")
+        data = await request.json()
 
-        return {"status": "ok"}
-    return {"status": "error", "message": "User not found"}
+        user = db.query(User).filter(User.email == user_email).first()
+        if user:
+            new_order = Orders(
+                symbol=data["symbol"], quantity=data["quantity"], user_id=user.id
+            )
+            db.add(new_order)
+
+            portfolio = (
+                db.query(Portfolio)
+                .filter(
+                    Portfolio.user_id == user.id, Portfolio.symbol == data["symbol"]
+                )
+                .first()
+            )
+            if not portfolio:
+                portfolio = Portfolio(
+                    symbol=data["symbol"], quantity=0, user_id=user.id
+                )
+                db.add(portfolio)
+            portfolio.quantity += data["quantity"]
+            db.commit()
+
+            return {"status": "ok"}
+    except jwt.JWTError:
+        return {"authenticated": False}
 
 
 @app.get("/auth/status")
