@@ -1,13 +1,13 @@
 from __future__ import annotations as _annotations
 
 import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Literal, TypeVar, Any, Optional
+from typing import Annotated, Any, Literal, Optional, TypeVar
 
 import httpx
-from dataclasses import dataclass
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,14 +16,8 @@ from jose import jwt
 from pydantic import BaseModel, Field, TypeAdapter
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    UserPromptPart,
-)
-
+from pydantic_ai.messages import (ModelMessage, ModelRequest, ModelResponse,
+                                  TextPart, UserPromptPart)
 from sqlalchemy.orm import Session
 from typing_extensions import ParamSpec, TypedDict
 
@@ -43,7 +37,9 @@ class SupportRequest(BaseModel):
     ticker: str = Field(description="The ticker from request")
     amount: int = Field(description="The amount from request")
     rate: float = Field(description="The rate of the ticker from get_tickers tools")
-    alias: Optional[str] = Field(description="The alias of the ticker from get_tickers tools")
+    alias: Optional[str] = Field(
+        description="The alias of the ticker from get_tickers tools"
+    )
     action: Action
 
 
@@ -222,8 +218,7 @@ async def chat_prompt(request: Request):
         "quantity": result.data.amount,
         "action": result.data.action,
         "rate": result.data.rate,
-        "alias": result.data.alias
-
+        "alias": result.data.alias,
     }
 
     async with httpx.AsyncClient() as client:
@@ -257,6 +252,7 @@ async def order(request: Request, db: Session = Depends(get_db)):
             new_order = Orders(
                 symbol=data["symbol"],
                 rate=data["rate"],
+                alias=data["alias"],
                 quantity=data["quantity"],
                 action=data["action"],
                 user_id=user.id,
@@ -272,12 +268,18 @@ async def order(request: Request, db: Session = Depends(get_db)):
             )
             if not portfolio:
                 portfolio = Portfolio(
-                    symbol=data["symbol"], rate=data["rate"], quantity=0, user_id=user.id
+                    symbol=data["symbol"],
+                    rate=data["rate"],
+                    alias=data["alias"],
+                    quantity=0,
+                    user_id=user.id,
                 )
             if data["action"] == Action.BUY:
                 portfolio.quantity += data["quantity"]
+                portfolio.rate += data["quantity"] * data["rate"]
             else:
                 portfolio.quantity -= data["quantity"]
+                portfolio.rate += data["quantity"] * data["rate"]
 
             db.add(portfolio)
 

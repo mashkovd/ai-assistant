@@ -1,7 +1,9 @@
 from __future__ import annotations as _annotations
 
 import os
-from sqlalchemy import Column, ForeignKey, Integer, String, Float, create_engine
+
+from sqlalchemy import (Column, Float, ForeignKey, Integer, String,
+                        create_engine)
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Database setup
@@ -27,6 +29,7 @@ class Orders(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     symbol = Column(String)
     rate = Column(Float)
+    alias = Column(String)
     quantity = Column(Integer)
     action = Column(String)
 
@@ -37,6 +40,7 @@ class Portfolio(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     symbol = Column(String)
     rate = Column(Float)
+    alias = Column(String)
     quantity = Column(Integer)
 
 
