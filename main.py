@@ -291,7 +291,7 @@ async def order(request: Request, db: Session = Depends(get_db)):
             if not portfolio:
                 portfolio = Portfolio(
                     symbol=data["symbol"],
-                    rate=data["rate"],
+                    rate=0,
                     alias=data["alias"],
                     quantity=0,
                     user_id=user.id,
